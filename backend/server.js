@@ -11,6 +11,10 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Health check routes
+app.get('/', (req, res) => res.send('TeamTracker Backend is running!'));
+app.get('/api', (req, res) => res.send('API is accessible at /api/login, /api/zone, etc.'));
+
 // Routes
 
 // 1. Auth: Login

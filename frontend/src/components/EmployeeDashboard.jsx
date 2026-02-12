@@ -216,44 +216,50 @@ const EmployeeDashboard = () => {
 
                         {/* Photo Preview & Check In Actions */}
                         {!photo ? (
-                            { location? 'OPEN CAMERA & CHECK IN': user ? 'Locating...' : 'Loading...' }
+                            !showCamera && (
+                                <button
+                                    onClick={startCamera}
+                                    disabled={!location}
+                                    style={{ width: '100%', padding: '1rem', background: location ? '#1a73e8' : '#ccc', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: location ? 'pointer' : 'not-allowed' }}
+                                >
+                                    {location ? 'OPEN CAMERA & CHECK IN' : user ? 'Locating...' : 'Loading...'}
                                 </button>
-                )
+                            )
                         ) : (
-                <div style={{ textAlign: 'center' }}>
-                    <img src={photo} alt="Check-in Self" style={{ maxWidth: '100%', borderRadius: '8px', marginBottom: '1rem', border: '2px solid #ddd' }} />
-                    <div style={{ display: 'grid', gap: '1rem' }}>
-                        <button onClick={handleCheckIn} style={{ width: '100%', padding: '1rem', background: '#28a745', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: 'pointer' }}>
-                            CONFIRM CHECK IN
-                        </button>
-                        <button onClick={() => setPhoto(null)} style={{ width: '100%', padding: '0.75rem', background: 'transparent', color: '#666', border: '1px solid #ccc', borderRadius: '8px', cursor: 'pointer' }}>
-                            Retake Photo
-                        </button>
-                    </div>
-                </div>
+                            <div style={{ textAlign: 'center' }}>
+                                <img src={photo} alt="Check-in Self" style={{ maxWidth: '100%', borderRadius: '8px', marginBottom: '1rem', border: '2px solid #ddd' }} />
+                                <div style={{ display: 'grid', gap: '1rem' }}>
+                                    <button onClick={handleCheckIn} style={{ width: '100%', padding: '1rem', background: '#28a745', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: 'pointer' }}>
+                                        CONFIRM CHECK IN
+                                    </button>
+                                    <button onClick={() => setPhoto(null)} style={{ width: '100%', padding: '0.75rem', background: 'transparent', color: '#666', border: '1px solid #ccc', borderRadius: '8px', cursor: 'pointer' }}>
+                                        Retake Photo
+                                    </button>
+                                </div>
+                            </div>
                         )}
-            </div>
-            ) : (
-            <div style={{ display: 'grid', gap: '1rem' }}>
-                <button
-                    onClick={() => handleCheckOut(false)}
-                    style={{ width: '100%', padding: '1rem', background: '#6c757d', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: 'pointer' }}
-                >
-                    CHECK OUT
-                </button>
-                <button
-                    onClick={() => handleCheckOut(true)}
-                    style={{ width: '100%', padding: '1rem', background: '#dc3545', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: 'pointer' }}
-                >
-                    EMERGENCY CHECK OUT
-                </button>
-                <p style={{ textAlign: 'center', fontSize: '0.9rem', color: '#666', marginTop: '1rem' }}>
-                    Your location is being tracked live while checked in.
-                </p>
-            </div>
+                    </div>
+                ) : (
+                    <div style={{ display: 'grid', gap: '1rem' }}>
+                        <button
+                            onClick={() => handleCheckOut(false)}
+                            style={{ width: '100%', padding: '1rem', background: '#6c757d', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: 'pointer' }}
+                        >
+                            CHECK OUT
+                        </button>
+                        <button
+                            onClick={() => handleCheckOut(true)}
+                            style={{ width: '100%', padding: '1rem', background: '#dc3545', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: 'pointer' }}
+                        >
+                            EMERGENCY CHECK OUT
+                        </button>
+                        <p style={{ textAlign: 'center', fontSize: '0.9rem', color: '#666', marginTop: '1rem' }}>
+                            Your location is being tracked live while checked in.
+                        </p>
+                    </div>
                 )}
 
-        </div>
+            </div>
         </div >
     );
 };

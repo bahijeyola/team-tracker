@@ -214,13 +214,15 @@ const EmployeeDashboard = () => {
 
                         {/* Photo Preview & Check In Actions */}
                         {!photo ? (
-                            <button
-                                onClick={startCamera}
-                                disabled={!location}
-                                style={{ width: '100%', padding: '1rem', background: location ? '#1a73e8' : '#ccc', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: location ? 'pointer' : 'not-allowed' }}
-                            >
-                                {location ? 'TAKE PHOTO & CHECK IN' : user ? 'Locating...' : 'Loading...'}
-                            </button>
+                            !showCamera && (
+                                <button
+                                    onClick={startCamera}
+                                    disabled={!location}
+                                    style={{ width: '100%', padding: '1rem', background: location ? '#1a73e8' : '#ccc', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: location ? 'pointer' : 'not-allowed' }}
+                                >
+                                    {location ? 'OPEN CAMERA & CHECK IN' : user ? 'Locating...' : 'Loading...'}
+                                </button>
+                            )
                         ) : (
                             <div style={{ textAlign: 'center' }}>
                                 <img src={photo} alt="Check-in Self" style={{ maxWidth: '100%', borderRadius: '8px', marginBottom: '1rem', border: '2px solid #ddd' }} />

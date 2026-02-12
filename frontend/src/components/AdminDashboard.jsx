@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Circle, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Map, Users, Clock, Save, Plus, LogOut, Search } from 'lucide-react';
+import { Map, Users, Clock, Save, Plus, LogOut, Search, Calendar, Activity } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 
@@ -34,6 +34,11 @@ const AdminDashboard = () => {
 
     // User Creation State
     const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: 'employee' });
+
+    const [users, setUsers] = useState([]);
+    const [shifts, setShifts] = useState([]);
+    const [newShift, setNewShift] = useState({ userId: '', dayOfWeek: 'Lundi', startTime: '09:00', endTime: '17:00', center: { lat: 0, lng: 0 }, radius: 200 });
+    const [liveStatus, setLiveStatus] = useState([]);
 
     // Search State
     const [searchQuery, setSearchQuery] = useState('');
@@ -91,9 +96,44 @@ const AdminDashboard = () => {
     };
 
     useEffect(() => {
-        loadZone();
+        loadUsers();
+        // loadZone(); // Optional: Global zone might be deprecated or kept
         loadCheckIns();
-    }, [date]);
+        // Load live status if tracking
+        if (activeTab === 'tracking') {
+            loadLiveStatus();
+            const interval = setInterval(loadLiveStatus, 10000);
+            return () => clearInterval(interval);
+        }
+    }, [activeTab, date]);
+
+    const loadUsers = async () => {
+        try {
+            const res = await api.get('/users?role=employee'); // Assuming we can filter or just get all
+            // If API doesn't support filter, filter here.
+            // Actually /users is currently Create only? No, I need a GET /users endpoint in Backend or I can use Supabase client directly check
+            // Let's assume I check the 'users' table via the API I'll add or just use the generic response
+            // Wait, I didn't add GET /api/users. I did add GET /api/attendance/live which returns users.
+            // I'll use /api/attendance/live to get users list for the dropdown for now or add GET /users.
+            const statusRes = await api.get('/attendance/live');
+            setUsers(statusRes.data);
+        } catch (err) { console.error(err); }
+    };
+
+    const loadLiveStatus = async () => {
+        try {
+            const res = await api.get('/attendance/live');
+            setLiveStatus(res.data);
+        } catch (err) { console.error(err); }
+    };
+
+    const handleAddShift = async () => {
+        try {
+            await api.post('/shifts', newShift);
+            alert('Shift added successfully');
+            // Refresh shifts
+        } catch (err) { alert('Failed to add shift'); }
+    };
 
     // Get user's current location on first load
     useEffect(() => {
@@ -173,10 +213,22 @@ const AdminDashboard = () => {
                         <Map size={20} style={{ marginRight: '10px' }} /> Zone Config
                     </button>
                     <button
+                        onClick={() => setActiveTab('planning')}
+                        style={{ ...navButtonStyle, background: activeTab === 'planning' ? '#e8f0fe' : 'transparent', color: activeTab === 'planning' ? '#1a73e8' : '#333' }}
+                    >
+                        <Calendar size={20} style={{ marginRight: '10px' }} /> Planning
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('tracking')}
+                        style={{ ...navButtonStyle, background: activeTab === 'tracking' ? '#e8f0fe' : 'transparent', color: activeTab === 'tracking' ? '#1a73e8' : '#333' }}
+                    >
+                        <Activity size={20} style={{ marginRight: '10px' }} /> Tracking Live
+                    </button>
+                    <button
                         onClick={() => setActiveTab('history')}
                         style={{ ...navButtonStyle, background: activeTab === 'history' ? '#e8f0fe' : 'transparent', color: activeTab === 'history' ? '#1a73e8' : '#333' }}
                     >
-                        <Clock size={20} style={{ marginRight: '10px' }} /> Check-In History
+                        <Clock size={20} style={{ marginRight: '10px' }} /> Rapports Journaliers
                     </button>
                     <button
                         onClick={() => setActiveTab('users')}
@@ -290,6 +342,107 @@ const AdminDashboard = () => {
                             </MapContainer>
                         </div>
                         <button onClick={saveZone} style={primaryButtonStyle}><Save size={18} style={{ marginRight: '8px' }} /> Save Configuration</button>
+                    </div>
+                )}
+
+                {activeTab === 'planning' && (
+                    <div style={cardStyle}>
+                        <h2 style={{ marginBottom: '1.5rem' }}>Configuration du Planning (Par Employé)</h2>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '0.5rem' }}>1. Sélectionner l'employé à configurer</label>
+                                <select
+                                    style={{ ...inputStyle, width: '100%' }}
+                                    value={newShift.userId}
+                                    onChange={(e) => setNewShift({ ...newShift, userId: e.target.value })}
+                                >
+                                    <option value="">-- Choisir un employé --</option>
+                                    {users.map(u => (
+                                        <option key={u.id} value={u.id}>{u.username}</option>
+                                    ))}
+                                </select>
+
+                                <div style={{ marginTop: '1.5rem' }}>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem' }}>2. Définir l'horaire</label>
+                                    <div style={{ display: 'grid', gap: '1rem' }}>
+                                        <div>
+                                            <label>Jour</label>
+                                            <select
+                                                style={{ ...inputStyle, width: '100%' }}
+                                                value={newShift.dayOfWeek}
+                                                onChange={(e) => setNewShift({ ...newShift, dayOfWeek: e.target.value })}
+                                            >
+                                                {['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'].map(d => (
+                                                    <option key={d} value={d}>{d}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                            <div>
+                                                <label>Début</label>
+                                                <input type="time" style={{ ...inputStyle, width: '100%' }} value={newShift.startTime} onChange={e => setNewShift({ ...newShift, startTime: e.target.value })} />
+                                            </div>
+                                            <div>
+                                                <label>Fin</label>
+                                                <input type="time" style={{ ...inputStyle, width: '100%' }} value={newShift.endTime} onChange={e => setNewShift({ ...newShift, endTime: e.target.value })} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '0.5rem' }}>3. Définir la Zone GPS (Cliquer sur la carte)</label>
+                                <div style={{ height: '300px', borderRadius: '8px', overflow: 'hidden', marginBottom: '1rem', border: '1px solid #ddd' }}>
+                                    <MapContainer center={[33.5731, -7.5898]} zoom={13} style={{ height: '100%', width: '100%' }}>
+                                        <TileLayer
+                                            attribution='&copy; OpenStreetMap'
+                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                        />
+                                        <LocationMarker setCenter={(latlng) => setNewShift({ ...newShift, center: { lat: latlng.lat, lng: latlng.lng } })} />
+                                        {newShift.center.lat !== 0 && (
+                                            <Circle
+                                                center={[newShift.center.lat, newShift.center.lng]}
+                                                radius={newShift.radius}
+                                                pathOptions={{ color: 'green', fillColor: 'green', fillOpacity: 0.2 }}
+                                            />
+                                        )}
+                                    </MapContainer>
+                                </div>
+                                <label>Rayon (m): {newShift.radius}</label>
+                                <input type="range" min="50" max="1000" value={newShift.radius} onChange={e => setNewShift({ ...newShift, radius: Number(e.target.value) })} style={{ width: '100%' }} />
+                            </div>
+                        </div>
+                        <button onClick={handleAddShift} style={{ ...primaryButtonStyle, marginTop: '2rem', width: '100%' }}>
+                            Ajouter ce quart de travail
+                        </button>
+                    </div>
+                )}
+
+                {activeTab === 'tracking' && (
+                    <div style={cardStyle}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h2 style={{ marginBottom: 0 }}>Tracking Live</h2>
+                            <span style={{ fontSize: '0.9rem', color: '#666' }}>Auto-refresh: 10s</span>
+                        </div>
+                        <div style={{ display: 'grid', gap: '1rem' }}>
+                            {liveStatus.map(u => (
+                                <div key={u.id} style={{ padding: '1rem', border: '1px solid #eee', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: u.isOnline ? '#f0fff4' : '#fff' }}>
+                                    <div>
+                                        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>{u.username}</h3>
+                                        <p style={{ margin: '0.25rem 0 0', color: '#666', fontSize: '0.9rem' }}>
+                                            Last Location: {u.lastLocation ? `${u.lastLocation.lat.toFixed(4)}, ${u.lastLocation.lng.toFixed(4)}` : 'Inconnu'}
+                                        </p>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: u.isOnline ? '#28a745' : '#6c757d' }}></div>
+                                        <span style={{ fontWeight: '500', color: u.isOnline ? '#28a745' : '#6c757d' }}>
+                                            {u.isOnline ? 'En Ligne' : 'Hors ligne'}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
 

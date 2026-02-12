@@ -1,213 +1,163 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut } from 'lucide-react';
+import { LogOut, MapPin, AlertCircle, CheckCircle } from 'lucide-react';
 import api from '../api';
 
-const getDistanceFromLatLonInM = (lat1, lon1, lat2, lon2) => {
-    var R = 6371; // Radius of the earth in km
-    var dLat = deg2rad(lat2 - lat1);
-    var dLon = deg2rad(lon2 - lon1);
-    var a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2)
-        ;
-    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    var d = R * c; // Distance in km
-    return d * 1000; // Distance in m
-};
-
-const deg2rad = (deg) => {
-    return deg * (Math.PI / 180)
-};
-
 const EmployeeDashboard = () => {
-    const [status, setStatus] = useState('Checking location...');
-    const [inZone, setInZone] = useState(false);
+    const [status, setStatus] = useState('Loading...');
+    const [isCheckedIn, setIsCheckedIn] = useState(false);
     const [location, setLocation] = useState(null);
-    const [zone, setZone] = useState(null);
-    const [cameraOpen, setCameraOpen] = useState(false);
-    const videoRef = useRef(null);
-    const canvasRef = useRef(null);
-    const [capturedImage, setCapturedImage] = useState(null);
+    const [error, setError] = useState(null);
     const navigate = useNavigate();
+    const user = JSON.parse(localStorage.getItem('user'));
+
+    // Polling interval for live tracking
+    const trackingInterval = useRef(null);
+
+    useEffect(() => {
+        if (!user) {
+            navigate('/');
+            return;
+        }
+        checkStatus();
+
+        // Watch location
+        const watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+                const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                setLocation(coords);
+                // If checked in, sync location
+                if (isCheckedIn) {
+                    api.post('/attendance/location', { userId: user.id, coords }).catch(console.error);
+                }
+            },
+            (err) => setError('Geolocation error: ' + err.message),
+            { enableHighAccuracy: true }
+        );
+
+        return () => {
+            navigator.geolocation.clearWatch(watchId);
+            if (trackingInterval.current) clearInterval(trackingInterval.current);
+        };
+    }, [isCheckedIn]);
+
+    const checkStatus = async () => {
+        try {
+            const res = await api.get('/attendance/live');
+            const myStatus = res.data.find(u => u.id === user.id);
+            if (myStatus && myStatus.isOnline) {
+                setIsCheckedIn(true);
+                setStatus('Currently Checked In');
+            } else {
+                setIsCheckedIn(false);
+                setStatus('Ready to Check In');
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleCheckIn = async () => {
+        if (!location) {
+            alert('Waiting for location...');
+            return;
+        }
+
+        // Optional: Get current time and day from JS to send, though backend can handle it.
+        const dayOfWeek = new Date().toLocaleDateString('fr-FR', { weekday: 'long' });
+        // Capitalize first letter
+        const dayFormatted = dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1);
+
+        try {
+            await api.post('/attendance/checkin', {
+                userId: user.id,
+                coords: location,
+                dayOfWeek: dayFormatted // Sending this just in case backend wants it, though backend infers currently
+            });
+            setIsCheckedIn(true);
+            setStatus('Checked In Successfully');
+            alert('Welcome! You are checked in.');
+        } catch (err) {
+            alert('Check-in Failed: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
+    const handleCheckOut = async (isEmergency = false) => {
+        try {
+            await api.post('/attendance/checkout', {
+                userId: user.id,
+                status: isEmergency ? 'emergency_out' : 'completed'
+            });
+            setIsCheckedIn(false);
+            setStatus('Checked Out');
+            alert(isEmergency ? 'Emergency Check-out Recorded' : 'Goodbye! Checked out successfully.');
+        } catch (err) {
+            alert('Check-out failed');
+        }
+    };
 
     const handleLogout = () => {
         localStorage.removeItem('user');
         navigate('/', { replace: true });
     };
 
-    useEffect(() => {
-        loadZone();
-        const watchId = navigator.geolocation.watchPosition(
-            (pos) => {
-                const { latitude, longitude } = pos.coords;
-                setLocation({ lat: latitude, lng: longitude });
-            },
-            (err) => console.error(err),
-            { enableHighAccuracy: true }
-        );
-        return () => navigator.geolocation.clearWatch(watchId);
-    }, []);
-
-    useEffect(() => {
-        if (location && zone) {
-            const dist = getDistanceFromLatLonInM(location.lat, location.lng, zone.center.lat, zone.center.lng);
-            if (dist <= zone.radius) {
-                setStatus('You are in the zone');
-                setInZone(true);
-            } else {
-                setStatus(`Out of zone (Dist: ${Math.round(dist)}m)`);
-                setInZone(false);
-            }
-        }
-    }, [location, zone]);
-
-    const loadZone = async () => {
-        try {
-            const res = await api.get('/zone');
-            if (res.data) setZone(res.data);
-        } catch (err) {
-            console.error('Error loading zone');
-        }
-    };
-
-    const startCamera = async () => {
-        setCameraOpen(true);
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-            }
-        } catch (err) {
-            console.error('Error accessing camera:', err);
-            alert('Camera access denied');
-        }
-    };
-
-    // Compress image by reducing quality and size
-    const compressImage = (dataUrl, maxWidth = 480, quality = 0.5) => {
-        return new Promise((resolve) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
-                canvas.width = img.width * ratio;
-                canvas.height = img.height * ratio;
-
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-                // Convert to JPEG with reduced quality (0.5 = 50% quality)
-                const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-
-                // Log size comparison
-                const originalSize = Math.round(dataUrl.length * 0.75 / 1024);
-                const compressedSize = Math.round(compressedDataUrl.length * 0.75 / 1024);
-                console.log(`Image compressed: ${originalSize}KB → ${compressedSize}KB (${Math.round((1 - compressedSize / originalSize) * 100)}% smaller)`);
-
-                resolve(compressedDataUrl);
-            };
-            img.src = dataUrl;
-        });
-    };
-
-    const capturePhoto = async () => {
-        if (videoRef.current && canvasRef.current) {
-            const context = canvasRef.current.getContext('2d');
-            context.drawImage(videoRef.current, 0, 0, 320, 240);
-            const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.8);
-
-            // Compress the image before saving
-            const compressedImage = await compressImage(dataUrl);
-            setCapturedImage(compressedImage);
-
-            // Stop camera
-            const stream = videoRef.current.srcObject;
-            const tracks = stream.getTracks();
-            tracks.forEach(track => track.stop());
-            setCameraOpen(false);
-        }
-    };
-
-    const handleCheckIn = async () => {
-        const user = JSON.parse(localStorage.getItem('user'));
-        if (!user) return alert('Not logged in');
-
-        try {
-            await api.post('/checkin', {
-                userId: user.id, // Changed from user._id to user.id for Supabase
-                coords: location,
-                photo: capturedImage,
-                status: inZone ? 'in_zone' : 'out_of_zone'
-            });
-            alert(inZone ? 'Check-in successful!' : 'Check-in recorded (Out of zone)');
-            setCapturedImage(null);
-        } catch (err) {
-            console.error('Check-in error:', err);
-            alert('Check-in failed: ' + (err.response?.data?.error || err.message));
-        }
-    };
-
     return (
-        <div style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h1 style={{ margin: 0 }}>Employee Dashboard</h1>
-                <button
-                    onClick={handleLogout}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '0.5rem 1rem',
-                        background: '#dc3545',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        fontSize: '0.9rem'
-                    }}
-                >
-                    <LogOut size={16} style={{ marginRight: '6px' }} /> Logout
-                </button>
-            </div>
+        <div style={{ minHeight: '100vh', background: '#f8f9fa', padding: '2rem', fontFamily: "'Inter', sans-serif" }}>
+            <div style={{ maxWidth: '600px', margin: '0 auto', background: 'white', borderRadius: '12px', padding: '2rem', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
 
-            <div style={{ background: inZone ? '#d4edda' : '#f8d7da', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', textAlign: 'center' }}>
-                <h2 style={{ color: inZone ? '#155724' : '#721c24' }}>{status}</h2>
-                {location && <p>Lat: {location.lat.toFixed(5)}, Lng: {location.lng.toFixed(5)}</p>}
-            </div>
-
-            <div style={{ textAlign: 'center' }}>
-                {!cameraOpen && !capturedImage && (
-                    <button onClick={startCamera} style={{ padding: '0.75rem 2rem', fontSize: '1rem', cursor: 'pointer' }}>
-                        Open Camera
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                    <div>
+                        <h1 style={{ margin: 0, fontSize: '1.5rem', color: '#333' }}>Hello, {user?.username}</h1>
+                        <p style={{ margin: '0.5rem 0 0', color: '#666' }}>Employee Dashboard</p>
+                    </div>
+                    <button onClick={handleLogout} style={{ background: 'transparent', border: '1px solid #dc3545', color: '#dc3545', padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <LogOut size={16} style={{ marginRight: '6px' }} /> Logout
                     </button>
-                )}
+                </div>
 
-                {cameraOpen && (
-                    <div>
-                        <video ref={videoRef} autoPlay style={{ width: '100%', maxWidth: '320px', borderRadius: '8px' }}></video>
-                        <br />
-                        <button onClick={capturePhoto} style={{ marginTop: '1rem', padding: '0.5rem 1rem', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px' }}>
-                            Capture
-                        </button>
+                {error && (
+                    <div style={{ background: '#f8d7da', color: '#721c24', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', alignItems: 'center' }}>
+                        <AlertCircle size={20} style={{ marginRight: '10px' }} />
+                        {error}
                     </div>
                 )}
 
-                {capturedImage && (
-                    <div>
-                        <h3>Preview</h3>
-                        <img src={capturedImage} alt="Capture" style={{ width: '100%', maxWidth: '320px', borderRadius: '8px' }} />
-                        <br />
-                        <button onClick={handleCheckIn} style={{ marginTop: '1rem', padding: '0.75rem 2rem', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', fontSize: '1rem', cursor: 'pointer' }}>
-                            Submit Check-In
+                <div style={{ background: isCheckedIn ? '#d4edda' : '#e2e3e5', color: isCheckedIn ? '#155724' : '#383d41', padding: '1.5rem', borderRadius: '8px', marginBottom: '2rem', textAlign: 'center' }}>
+                    <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {isCheckedIn ? <CheckCircle size={24} style={{ marginRight: '10px' }} /> : <MapPin size={24} style={{ marginRight: '10px' }} />}
+                        {status}
+                    </h2>
+                    {location && <p style={{ margin: '1rem 0 0', fontSize: '0.9rem' }}>Current Location: {location.lat.toFixed(5)}, {location.lng.toFixed(5)}</p>}
+                </div>
+
+                {!isCheckedIn ? (
+                    <button
+                        onClick={handleCheckIn}
+                        disabled={!location}
+                        style={{ width: '100%', padding: '1rem', background: location ? '#1a73e8' : '#ccc', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: location ? 'pointer' : 'not-allowed' }}
+                    >
+                        {location ? 'CHECK IN NOW' : 'Locating...'}
+                    </button>
+                ) : (
+                    <div style={{ display: 'grid', gap: '1rem' }}>
+                        <button
+                            onClick={() => handleCheckOut(false)}
+                            style={{ width: '100%', padding: '1rem', background: '#6c757d', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: 'pointer' }}
+                        >
+                            CHECK OUT
                         </button>
-                        <button onClick={() => setCapturedImage(null)} style={{ marginLeft: '1rem', padding: '0.75rem', border: 'none', background: 'transparent', cursor: 'pointer', color: 'red' }}>
-                            Retake
+                        <button
+                            onClick={() => handleCheckOut(true)}
+                            style={{ width: '100%', padding: '1rem', background: '#dc3545', color: 'white', border: 'none', borderRadius: '8px', fontSize: '1.1rem', fontWeight: '600', cursor: 'pointer' }}
+                        >
+                            EMERGENCY CHECK OUT
                         </button>
+                        <p style={{ textAlign: 'center', fontSize: '0.9rem', color: '#666', marginTop: '1rem' }}>
+                            Your location is being tracked live while checked in.
+                        </p>
                     </div>
                 )}
 
-                <canvas ref={canvasRef} width="320" height="240" style={{ display: 'none' }}></canvas>
             </div>
         </div>
     );
